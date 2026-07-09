@@ -1,0 +1,79 @@
+/**
+ * Email Sending Utility
+ * =====================
+ * Sends transaction emails (such as OTP verification codes).
+ * If SMTP environment variables are not configured, logs the email content
+ * to the terminal console as a fallback, unblocking local development.
+ */
+
+const nodemailer = require('nodemailer');
+
+/**
+ * Sends an email using Nodemailer or logs to console.
+ *
+ * @param {object} options - Email options
+ * @param {string} options.email - Recipient email address
+ * @param {string} options.subject - Email subject line
+ * @param {string} options.message - Plain-text email message
+ * @param {string} [options.html] - HTML body content (optional)
+ * @returns {Promise<boolean>} Resolves to true when completed
+ */
+const sendEmail = async (options) => {
+  const smtpHost = process.env.SMTP_HOST;
+  const smtpPort = process.env.SMTP_PORT;
+  const smtpUser = process.env.SMTP_USER;
+  const smtpPass = process.env.SMTP_PASS;
+
+  // Check if SMTP is configured
+  const isSmtpConfigured = smtpHost && smtpPort && smtpUser && smtpPass;
+
+  if (!isSmtpConfigured) {
+    console.log('\n┌────────────────────────────────────────────────────────┐');
+    console.log('│ 📧  MOCK EMAIL LOG (SMTP NOT CONFIGURED)               │');
+    console.log('├────────────────────────────────────────────────────────┤');
+    console.log(`│ To:      ${options.email.padEnd(46)} │`);
+    console.log(`│ Subject: ${options.subject.padEnd(46)} │`);
+    console.log('├────────────────────────────────────────────────────────┤');
+    console.log('│ Message:                                               │');
+    // Splitting lines to print nicely inside a box
+    const lines = options.message.split('\n');
+    lines.forEach(line => {
+      console.log(`│   ${line.padEnd(52)} │`);
+    });
+    console.log('└────────────────────────────────────────────────────────┘\n');
+    return true;
+  }
+
+  // Create transporter
+  const transporter = nodemailer.createTransport({
+    host: smtpHost,
+    port: parseInt(smtpPort, 10),
+    auth: {
+      user: smtpUser,
+      pass: smtpPass,
+    },
+  });
+
+  // Mail options
+  const mailOptions = {
+    from: process.env.SMTP_FROM || '"Secure Voting" <noreply@votingplatform.com>',
+    to: options.email,
+    subject: options.subject,
+    text: options.message,
+    html: options.html || `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+        <h2 style="color: #4f46e5; text-align: center;">Secure Voting Platform</h2>
+        <hr style="border: 0; border-top: 1px solid #e0e0e0; margin: 20px 0;" />
+        <p>${options.message.replace(/\n/g, '<br>')}</p>
+        <hr style="border: 0; border-top: 1px solid #e0e0e0; margin: 20px 0;" />
+        <p style="font-size: 12px; color: #6b7280; text-align: center;">This is an automated system email. Please do not reply.</p>
+      </div>
+    `,
+  };
+
+  // Send mail
+  await transporter.sendMail(mailOptions);
+  return true;
+};
+
+module.exports = sendEmail;
