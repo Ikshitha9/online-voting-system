@@ -48,10 +48,13 @@ const sendEmail = async (options) => {
   const transporter = nodemailer.createTransport({
     host: smtpHost,
     port: parseInt(smtpPort, 10),
+    secure: parseInt(smtpPort, 10) === 465, // true for 465, false for other ports
     auth: {
       user: smtpUser,
       pass: smtpPass,
     },
+    // Force IPv4 to prevent ENETUNREACH errors on IPv6 networks
+    family: 4,
   });
 
   // Mail options
