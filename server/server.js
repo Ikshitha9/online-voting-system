@@ -38,7 +38,7 @@ app.use(helmet());
 // CORS configuration (allow requests from the frontend client port)
 app.use(
   cors({
-    origin: ['http://localhost:5173', 'http://127.0.0.1:5173'], // Vite dev servers
+    origin: ['http://localhost:5173', 'http://127.0.0.1:5173' , 'https://online-voting-system-1-5jle.onrender.com'], // Vite dev servers
     credentials: true,
   })
 );
