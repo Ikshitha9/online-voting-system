@@ -55,6 +55,9 @@ const sendEmail = async (options) => {
     },
     // Force IPv4 to prevent ENETUNREACH errors on IPv6 networks
     family: 4,
+    connectionTimeout: 5000, // 5 seconds connection timeout
+    greetingTimeout: 5000,   // 5 seconds greeting timeout
+    socketTimeout: 10000,    // 10 seconds socket timeout
   });
 
   // Mail options
@@ -74,9 +77,34 @@ const sendEmail = async (options) => {
     `,
   };
 
-  // Send mail
-  await transporter.sendMail(mailOptions);
-  return true;
+  try {
+    // Send mail
+    await transporter.sendMail(mailOptions);
+    return true;
+  } catch (error) {
+    console.error('🚨 SMTP Error sending email:', error.message);
+
+    // In development mode, fall back to console logging so development is not blocked
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('\n┌────────────────────────────────────────────────────────┐');
+      console.log('│ 📧  FALLBACK MOCK EMAIL LOG (SMTP SEND FAILED)         │');
+      console.log('├────────────────────────────────────────────────────────┤');
+      console.log(`│ Error:   ${(error.message || '').slice(0, 45).padEnd(46)} │`);
+      console.log(`│ To:      ${options.email.padEnd(46)} │`);
+      console.log(`│ Subject: ${options.subject.padEnd(46)} │`);
+      console.log('├────────────────────────────────────────────────────────┤');
+      console.log('│ Message:                                               │');
+      const lines = options.message.split('\n');
+      lines.forEach(line => {
+        console.log(`│   ${line.padEnd(52)} │`);
+      });
+      console.log('└────────────────────────────────────────────────────────┘\n');
+      return true;
+    }
+
+    // In production, rethrow a cleaner/more descriptive error
+    throw new Error(`Email delivery failed: ${error.message}`);
+  }
 };
 
 module.exports = sendEmail;
