@@ -39,8 +39,8 @@ exports.register = async (req, res) => {
   try {
     const { fullName, email, password, role, adminKey } = req.body;
 
-    // Check if user already exists
-    const existingUser = await User.findOne({ email });
+    // Check if user already exists (fully registered)
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
     if (existingUser) {
       return res.status(400).json({
         success: false,
@@ -61,41 +61,37 @@ exports.register = async (req, res) => {
       finalRole = 'admin';
     }
 
-    // Create user object
-    const user = await User.create({
-      fullName,
-      email,
-      password,
-      role: finalRole,
-      isVerified: false,
-    });
+    // Hash password before storing in temporary OTP record
+    const bcrypt = require('bcryptjs');
+    const salt = await bcrypt.genSalt(12);
+    const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Generate & store OTP
+    // Clean up any previous pending OTP records for this email
+    await OTP.deleteMany({ email: email.toLowerCase() });
+
+    // Generate & store OTP with pending user data (NO User record created yet)
     const otpCode = generateOTP();
     await OTP.create({
-      email: user.email,
+      email: email.toLowerCase(),
       otp: otpCode,
+      pendingUser: {
+        fullName,
+        password: hashedPassword,
+        role: finalRole,
+      },
     });
 
-    // Trigger OTP dispatch
+    // Attempt to send verification email
     await sendEmail({
-      email: user.email,
+      email: email.toLowerCase(),
       subject: 'Verify your account - OTP Code',
-      message: `Welcome to the Secure Online Voting Platform, ${user.fullName}!\n\nYour 6-digit verification code is: ${otpCode}\n\nThis code is valid for 10 minutes. If you did not request this, please ignore this email.`,
+      message: `Welcome to the Secure Online Voting Platform, ${fullName}!\n\nYour 6-digit verification code is: ${otpCode}\n\nThis code is valid for 10 minutes. If you did not request this, please ignore this email.`,
     });
-
-    // Record audit trail event
-    await logAudit(
-      'REGISTER',
-      user._id,
-      `User registered as ${finalRole}: ${user.email}`,
-      req
-    );
 
     res.status(201).json({
       success: true,
       message: 'Registration successful! Please check your email for the verification code.',
-      email: user.email,
+      email: email.toLowerCase(),
     });
   } catch (error) {
     console.error('🚨 Register error:', error.stack);
@@ -108,6 +104,7 @@ exports.register = async (req, res) => {
 
 /**
  * Verify registered user account using email OTP
+ * Creates the User record only AFTER successful OTP verification.
  */
 exports.verifyOTP = async (req, res) => {
   try {
@@ -120,7 +117,7 @@ exports.verifyOTP = async (req, res) => {
       });
     }
 
-    // Find the latest OTP record
+    // Find the OTP record
     const otpRecord = await OTP.findOne({ email: email.toLowerCase(), otp });
     if (!otpRecord) {
       return res.status(400).json({
@@ -129,19 +126,35 @@ exports.verifyOTP = async (req, res) => {
       });
     }
 
-    // Activate the user
-    const user = await User.findOne({ email: email.toLowerCase() });
-    if (!user) {
+    let user;
+
+    // Check if a User already exists (resend OTP scenario for existing unverified user)
+    user = await User.findOne({ email: email.toLowerCase() });
+
+    if (user) {
+      // Existing user — just mark as verified
+      user.isVerified = true;
+      await user.save();
+    } else if (otpRecord.pendingUser && otpRecord.pendingUser.fullName) {
+      // New registration — create the User now with the pre-hashed password
+      user = new User({
+        fullName: otpRecord.pendingUser.fullName,
+        email: email.toLowerCase(),
+        password: otpRecord.pendingUser.password,
+        role: otpRecord.pendingUser.role || 'voter',
+        isVerified: true,
+      });
+      // Skip the pre-save password hashing since we already hashed it
+      user.$skipPasswordHash = true;
+      await user.save();
+    } else {
       return res.status(404).json({
         success: false,
-        message: 'User account not found.',
+        message: 'No pending registration found for this email.',
       });
     }
 
-    user.isVerified = true;
-    await user.save();
-
-    // Clean up OTP record
+    // Clean up OTP records
     await OTP.deleteMany({ email: email.toLowerCase() });
 
     // Generate credentials so user is logged in automatically after OTP check
@@ -189,34 +202,43 @@ exports.resendOTP = async (req, res) => {
       });
     }
 
-    const user = await User.findOne({ email: email.toLowerCase() });
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User account not found.',
-      });
-    }
+    const normalizedEmail = email.toLowerCase();
 
-    if (user.isVerified) {
+    // Check if user already exists and is verified
+    const existingUser = await User.findOne({ email: normalizedEmail });
+    if (existingUser && existingUser.isVerified) {
       return res.status(400).json({
         success: false,
         message: 'This account is already verified.',
       });
     }
 
-    // Clean up old codes
-    await OTP.deleteMany({ email: user.email });
+    // Check for a pending OTP record (covers both existing unverified users and new pending registrations)
+    const existingOTP = await OTP.findOne({ email: normalizedEmail });
+    if (!existingUser && !existingOTP) {
+      return res.status(404).json({
+        success: false,
+        message: 'No pending registration found. Please register first.',
+      });
+    }
+
+    // Preserve pending user data if it exists
+    const pendingUser = existingOTP?.pendingUser || undefined;
+
+    // Clean up old OTP codes
+    await OTP.deleteMany({ email: normalizedEmail });
 
     // Generate new OTP
     const otpCode = generateOTP();
     await OTP.create({
-      email: user.email,
+      email: normalizedEmail,
       otp: otpCode,
+      pendingUser,
     });
 
     // Send email
     await sendEmail({
-      email: user.email,
+      email: normalizedEmail,
       subject: 'Verify your account - New OTP Code',
       message: `Your new 6-digit verification code is: ${otpCode}\n\nThis code is valid for 10 minutes.`,
     });
