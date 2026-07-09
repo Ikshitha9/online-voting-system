@@ -118,8 +118,8 @@ userSchema.pre('save', function () {
  * Only hashes if the password field has been modified (avoids re-hashing on profile updates).
  */
 userSchema.pre('save', async function () {
-  // Skip hashing if the password hasn't changed
-  if (!this.isModified('password')) {
+  // Skip hashing if the password hasn't changed or if explicitly flagged to skip
+  if (!this.isModified('password') || this.$skipPasswordHash) {
     return;
   }
 
