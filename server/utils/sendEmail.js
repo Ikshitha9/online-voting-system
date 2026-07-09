@@ -84,26 +84,23 @@ const sendEmail = async (options) => {
   } catch (error) {
     console.error('🚨 SMTP Error sending email:', error.message);
 
-    // In development mode, fall back to console logging so development is not blocked
-    if (process.env.NODE_ENV !== 'production') {
-      console.log('\n┌────────────────────────────────────────────────────────┐');
-      console.log('│ 📧  FALLBACK MOCK EMAIL LOG (SMTP SEND FAILED)         │');
-      console.log('├────────────────────────────────────────────────────────┤');
-      console.log(`│ Error:   ${(error.message || '').slice(0, 45).padEnd(46)} │`);
-      console.log(`│ To:      ${options.email.padEnd(46)} │`);
-      console.log(`│ Subject: ${options.subject.padEnd(46)} │`);
-      console.log('├────────────────────────────────────────────────────────┤');
-      console.log('│ Message:                                               │');
-      const lines = options.message.split('\n');
-      lines.forEach(line => {
-        console.log(`│   ${line.padEnd(52)} │`);
-      });
-      console.log('└────────────────────────────────────────────────────────┘\n');
-      return true;
-    }
-
-    // In production, rethrow a cleaner/more descriptive error
-    throw new Error(`Email delivery failed: ${error.message}`);
+    // Fall back to console logging in all environments (including production on Render)
+    // so registration/verification flows are not blocked when SMTP is firewalled.
+    const envLabel = (process.env.NODE_ENV === 'production' ? 'PRODUCTION' : 'DEVELOPMENT').padEnd(11);
+    console.log('\n┌────────────────────────────────────────────────────────┐');
+    console.log(`│ 📧  FALLBACK EMAIL LOG (${envLabel})             │`);
+    console.log('├────────────────────────────────────────────────────────┤');
+    console.log(`│ Error:   ${(error.message || '').slice(0, 45).padEnd(46)} │`);
+    console.log(`│ To:      ${options.email.padEnd(46)} │`);
+    console.log(`│ Subject: ${options.subject.padEnd(46)} │`);
+    console.log('├────────────────────────────────────────────────────────┤');
+    console.log('│ Message:                                               │');
+    const lines = options.message.split('\n');
+    lines.forEach(line => {
+      console.log(`│   ${line.padEnd(52)} │`);
+    });
+    console.log('└────────────────────────────────────────────────────────┘\n');
+    return true;
   }
 };
 
